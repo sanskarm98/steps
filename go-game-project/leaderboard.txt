@@ -1,0 +1,10 @@
+sa,11
+sa,10
+sa,7
+sa,7
+sa,4
+sa,3
+as,2
+sa,2
+sa,1
+sa,1

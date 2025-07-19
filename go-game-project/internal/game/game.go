@@ -111,7 +111,22 @@ func (g *Game) StartGame() {
 		g.Output.Println("Endless Stairs! (Use ←/→ arrows or l/r keys)")
 
 		// Generate the next stair and its direction
-		nextDir, nextStairLines := generateNextStair()
+		nextStair, nextDir, nextStairLines := generateNextStair()
+		// If falling stair, halve the time limit but not below 0.9 seconds
+		if nextStair.Type == stair.StairFalling {
+			half := timeLimit / 2
+			minLimit := time.Duration(0.9 * float64(time.Second))
+			if half < minLimit {
+				timeLimit = minLimit
+			} else {
+				timeLimit = half
+			}
+		}
+		// If reverse polarity stair, swap left/right for this round
+		reversePolarity := nextStair.Type == stair.StairReverse
+		if reversePolarity {
+			g.Output.Println("!! REVERSE POLARITY !! Left is right, right is left!")
+		}
 		// Build and print the frame
 		frame := g.renderFrame(frameHeight, blankLine, nextStairLines)
 		g.printFrame(frame)
@@ -122,6 +137,13 @@ func (g *Game) StartGame() {
 
 		// Get player move with timeout
 		move, err := g.getPlayerMove(timeLimit)
+		if reversePolarity {
+			if move == "left" {
+				move = "right"
+			} else if move == "right" {
+				move = "left"
+			}
+		}
 		if err != nil {
 			g.Output.Println("\nTime's up! You fell!")
 			g.Output.Printf("Game over, %s! Final score: %d\n", g.Player.Name, g.Player.Score)
@@ -129,9 +151,27 @@ func (g *Game) StartGame() {
 		}
 
 		if move == nextDir {
-			g.Player.Score++
-			g.Output.Println("Good jump!")
-			time.Sleep(200 * time.Millisecond)
+			switch nextStair.Type {
+			case stair.StairFalling:
+				g.Output.Println("Oh no! The stair collapsed! You barely made it!")
+				time.Sleep(400 * time.Millisecond)
+				// Do not increase score, do not end game
+			case stair.StairSpiked:
+				if g.Player.Score > 0 {
+					g.Player.Score--
+				}
+				g.Output.Println("Ouch! You landed on spiked stairs! Score -1.")
+				time.Sleep(400 * time.Millisecond)
+				// Continue the game
+			case stair.StairSuper:
+				g.Player.Score += 5
+				g.Output.Println("Super stair! +5 points!")
+				time.Sleep(400 * time.Millisecond)
+			default:
+				g.Player.Score++
+				g.Output.Println("Good jump!")
+				time.Sleep(200 * time.Millisecond)
+			}
 		} else {
 			g.Output.Printf("Oops! The stair was to the %s. Game over, %s! Final score: %d\n", nextDir, g.Player.Name, g.Player.Score)
 			break
@@ -139,12 +179,30 @@ func (g *Game) StartGame() {
 	}
 }
 
-// generateNextStair randomly picks the next stair direction and returns its direction and rendered lines.
-func generateNextStair() (string, []string) {
-	if rand.Intn(2) == 0 {
-		return "left", stair.NewStair("left").LeftRender()
+// generateNextStair randomly picks the next stair direction and type, and returns the stair, its direction, and rendered lines.
+func generateNextStair() (*stair.Stair, string, []string) {
+	directions := []string{"left", "right"}
+	dir := directions[rand.Intn(2)]
+	// 50% normal, 10% falling, 10% spiked, 20% reverse, 10% super
+	typeRoll := rand.Intn(100)
+	var stairType string
+	switch {
+	case typeRoll < 50:
+		stairType = stair.StairNormal
+	case typeRoll < 60:
+		stairType = stair.StairFalling
+	case typeRoll < 70:
+		stairType = stair.StairSpiked
+	case typeRoll < 90:
+		stairType = stair.StairReverse
+	default:
+		stairType = stair.StairSuper
 	}
-	return "right", stair.NewStair("right").RightRender()
+	st := stair.NewStair(dir, stairType)
+	if dir == "left" {
+		return st, dir, st.LeftRender()
+	}
+	return st, dir, st.RightRender()
 }
 
 // renderFrame builds the frame for the current step, padding with blank lines and adding the stair.
